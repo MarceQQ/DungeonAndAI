@@ -1,27 +1,22 @@
-# dungeon_master.py (versión segura)
 import streamlit as st
 import google.generativeai as genai
 from dotenv import load_dotenv
 import os
 
 load_dotenv()
-
 st.set_page_config(page_title="D&D AI Dungeon Master", page_icon="🎲")
 
 
 def obtener_api_key():
-    # Primero verificar variable de entorno local
-    if "GOOGLE_API_KEY" in os.environ:
-        return os.environ["GOOGLE_API_KEY"]
-
-    # Luego verificar secrets de Streamlit
     try:
-        return st.secrets["APIKEY"]
-    except (KeyError, AttributeError):
+        if "GOOGLE_API_KEY" in os.environ:
+            return os.environ["GOOGLE_API_KEY"]
+        return st.secrets["GOOGLE_API_KEY"]
+    except KeyError:
         st.error("""
         🔐 Error de autenticación: 
         1. Para desarrollo local: crea un archivo .env con GOOGLE_API_KEY="tu_clave"
-        2. Para producción: configura la API Key en Secrets de Streamlit
+        2. Para producción: configura GOOGLE_API_KEY en Secrets de Streamlit
         """)
         st.stop()
 
@@ -32,7 +27,7 @@ def inicializar_modelo():
             genai.configure(api_key=obtener_api_key())
             st.session_state.model = genai.GenerativeModel('gemini-pro')
         except Exception as e:
-            st.error(f"❌ Error de configuración: {str(e)}")
+            st.error(f"❌ Error de configuración del modelo: {str(e)}")
             st.stop()
     return st.session_state.model
 
@@ -40,7 +35,6 @@ def inicializar_modelo():
 def gestionar_historial():
     if "historial" not in st.session_state:
         st.session_state.historial = []
-
     if len(st.session_state.historial) > 4:
         st.session_state.historial = st.session_state.historial[-4:]
 
@@ -49,36 +43,37 @@ def generar_respuesta(prompt):
     model = inicializar_modelo()
     gestionar_historial()
 
-    contexto_narrativo = "\n".join(
+    contexto = "\n".join(
         [f"{msg['role']}: {msg['content']}"
          for msg in st.session_state.historial[-2:]]
     )
 
     prompt_estructurado = f"""
-    [ROLE]
-    Eres un Dungeon Master de D&D 5e. Reglas:
+    [ROL]
+    Eres un Dungeon Master de D&D 5e experto. Reglas:
     1. Mantén coherencia con el escenario actual
     2. Máximo 3 párrafos breves
-    3. Nunca inventes acciones del jugador
+    3. Nunca asumas acciones del jugador
     4. Progresa la historia gradualmente
 
     [CONTEXTO]
-    {contexto_narrativo}
+    {contexto}
 
-    [NUEVA ACCIÓN]
-    Jugador: {prompt}
+    [ACCIÓN DEL JUGADOR]
+    {prompt}
 
     [RESPUESTA DM]
     • Describe consecuencias lógicas
     • Mantén el ambiente establecido
     • Usa diálogos NPC cuando sea relevante
+    • Incluye posibles caminos de acción
     """
 
     try:
         response = model.generate_content(prompt_estructurado)
         return response.text
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"⚡ Error en la generación: {str(e)}"
 
 
 def main():
@@ -93,10 +88,11 @@ def main():
         st.session_state.historial.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
 
-        with st.spinner("El DM está elaborando la respuesta..."):
+        with st.spinner("🎭 El Dungeon Master está pensando..."):
             respuesta = generar_respuesta(prompt)
             st.session_state.historial.append(
-                {"role": "assistant", "content": respuesta})
+                {"role": "assistant", "content": respuesta}
+            )
             st.chat_message("assistant").write(respuesta)
 
 
