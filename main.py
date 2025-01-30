@@ -1,4 +1,4 @@
-# dungeon_master.py (versión final corregida)
+# dungeon_master.py (versión segura)
 import streamlit as st
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -9,32 +9,45 @@ load_dotenv()
 st.set_page_config(page_title="D&D AI Dungeon Master", page_icon="🎲")
 
 
+def obtener_api_key():
+    # Primero verificar variable de entorno local
+    if "GOOGLE_API_KEY" in os.environ:
+        return os.environ["GOOGLE_API_KEY"]
+
+    # Luego verificar secrets de Streamlit
+    try:
+        return st.secrets["APIKEY"]
+    except (KeyError, AttributeError):
+        st.error("""
+        🔐 Error de autenticación: 
+        1. Para desarrollo local: crea un archivo .env con GOOGLE_API_KEY="tu_clave"
+        2. Para producción: configura la API Key en Secrets de Streamlit
+        """)
+        st.stop()
+
+
 def inicializar_modelo():
     if "model" not in st.session_state:
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            st.error("API KEY no encontrada en el archivo .env")
+        try:
+            genai.configure(api_key=obtener_api_key())
+            st.session_state.model = genai.GenerativeModel('gemini-pro')
+        except Exception as e:
+            st.error(f"❌ Error de configuración: {str(e)}")
             st.stop()
-
-        genai.configure(api_key=api_key)
-        st.session_state.model = genai.GenerativeModel('gemini-pro')
-
     return st.session_state.model
 
 
 def gestionar_historial():
-    # Inicializar historial si no existe
     if "historial" not in st.session_state:
         st.session_state.historial = []
 
-    # Mantener máximo 4 intercambios
     if len(st.session_state.historial) > 4:
         st.session_state.historial = st.session_state.historial[-4:]
 
 
 def generar_respuesta(prompt):
     model = inicializar_modelo()
-    gestionar_historial()  # Asegurar que el historial esté gestionado
+    gestionar_historial()
 
     contexto_narrativo = "\n".join(
         [f"{msg['role']}: {msg['content']}"
@@ -70,21 +83,16 @@ def generar_respuesta(prompt):
 
 def main():
     st.title("🎲 D&D AI Dungeon Master")
-
-    # Inicializar componentes esenciales
     inicializar_modelo()
-    gestionar_historial()  # Inicializar historial aquí
+    gestionar_historial()
 
-    # Mostrar historial existente
     for msg in st.session_state.historial:
         st.chat_message(msg["role"]).write(msg["content"])
 
     if prompt := st.chat_input("¿Qué hace tu personaje?"):
-        # Registrar acción del usuario
         st.session_state.historial.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
 
-        # Generar y mostrar respuesta
         with st.spinner("El DM está elaborando la respuesta..."):
             respuesta = generar_respuesta(prompt)
             st.session_state.historial.append(
